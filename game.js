@@ -15,7 +15,8 @@ let player;
 let cursors;
 let playerBullets;
 let enemyBullets;
-let enemies; // todos los enemigos juntos
+let enemies;
+
 let lastPlayerShot = 0;
 let lastEnemyShot = 0;
 
@@ -29,6 +30,10 @@ let gameOver = false;
 let highScore = Number(localStorage.getItem("highScore")) || 0;
 let highScoreText;
 
+// Velocidad base de enemigos
+let enemySpeedBase = 0.6;
+
+
 // ===========================
 //        PRELOAD
 // ===========================
@@ -41,11 +46,11 @@ function preload() {
     this.load.image('life', 'assets/hongo.png');
 }
 
+
 // ===========================
 //         CREATE
 // ===========================
 function create() {
-    // Fondo
     let bg = this.add.image(0, 0, 'sky').setOrigin(0, 0);
     bg.displayWidth = this.sys.game.config.width;
     bg.displayHeight = this.sys.game.config.height;
@@ -57,13 +62,13 @@ function create() {
 
     cursors = this.input.keyboard.createCursorKeys();
 
-    // Balas
+    // Grupos de balas
     playerBullets = this.physics.add.group();
     enemyBullets = this.physics.add.group();
 
     // Enemigos
     enemies = this.physics.add.group();
-    spawnEnemyGroup(this); // spawn inicial
+    spawnEnemyGroup(this);
 
     // Colisiones
     this.physics.add.overlap(playerBullets, enemies, destroyEnemy, null, this);
@@ -81,6 +86,7 @@ function create() {
     }
 }
 
+
 // ===========================
 //          UPDATE
 // ===========================
@@ -89,50 +95,71 @@ function update(time) {
 
     player.setVelocityX(0);
 
-    // Movimiento jugador
+    // Movimiento del jugador
     if (cursors.left.isDown) player.setVelocityX(-250);
     else if (cursors.right.isDown) player.setVelocityX(250);
 
-    // Disparo jugador
+    // Disparo
     if (cursors.space.isDown && time > lastPlayerShot) {
         shootPlayer(this);
         lastPlayerShot = time + 300;
     }
 
-    // Balas fuera de pantalla
+    // Eliminar balas fuera de pantalla
     playerBullets.children.iterate(b => { if (b && b.y < -50) b.destroy(); });
     enemyBullets.children.iterate(b => { if (b && b.y > 650) b.destroy(); });
 
-    // Movimiento enemigos y respawn
-    enemies.children.iterate(e => {
-        e.y += 0.2; // baja lentamente
-        e.x += Math.sin(time / 1000 + e.x) * 0.3; // zigzag leve
+    // Velocidad progresiva de enemigos
+    let enemySpeed = getEnemySpeed();
 
-        // Si sale por abajo, eliminar y generar nuevo grupo
-        if (e.y > 650) {
-            e.destroy();
-        }
+    // Movimiento de enemigos
+    enemies.children.iterate(e => {
+        if (!e) return;
+
+        e.y += enemySpeed;
+        e.x += Math.sin(time / 1000 + e.x) * 0.3;
+
+        if (e.y > 650) e.destroy();
     });
 
-    // Si ya no quedan enemigos, generar un nuevo grupo
+    // Si no quedan enemigos, crear nuevos
     if (enemies.countActive(true) === 0) {
         spawnEnemyGroup(this);
     }
 
-    // Disparo enemigos cada cierto tiempo
+    // **Disparos enemigo con más frecuencia según puntaje**
     if (time > lastEnemyShot) {
         enemies.children.iterate(e => {
-            if (Phaser.Math.Between(0, 100) < 10) { // 10% chance
+            if (Phaser.Math.Between(0, 100) < getEnemyFireChance()) {
                 shootEnemy(e);
             }
         });
-        lastEnemyShot = time + 1000;
+
+        // Menor tiempo entre ráfagas cuando aumenta la dificultad
+        lastEnemyShot = time + getEnemyFireRate();
     }
 }
 
+
 // ===========================
-//         FUNCIONES
+//       FUNCIONES
 // ===========================
+
+// Aumenta velocidad según score
+function getEnemySpeed() {
+    return enemySpeedBase + score * 0.002;
+}
+
+// Probabilidad de que un enemigo dispare (aumenta con la dificultad)
+function getEnemyFireChance() {
+    return 10 + Math.floor(score / 50); // cada 50 puntos aumenta la probabilidad
+}
+
+// Intervalo entre disparos enemigos
+function getEnemyFireRate() {
+    return Math.max(700 - score * 2, 200); 
+}
+
 function shootPlayer(scene) {
     let b = playerBullets.create(player.x, player.y - player.displayHeight / 2, 'bullet');
     b.setVelocityY(-300);
@@ -147,14 +174,16 @@ function shootEnemy(enemy) {
 
 function spawnEnemyGroup(scene) {
     const groupSize = 3;
-    const startX = Phaser.Math.Between(50, 600); // posición horizontal aleatoria
-    const startY = -50; // empezar arriba
+    const startX = Phaser.Math.Between(50, 600);
+    const startY = -50;
     const spacingX = 60;
 
     for (let i = 0; i < groupSize; i++) {
         let type = Phaser.Math.Between(1, 2);
         let enemy = enemies.create(startX + i * spacingX, startY, type === 1 ? 'enemy1' : 'enemy2');
-        enemy.setScale(1.5);
+
+        // MISMO TAMAÑO QUE EL JUGADOR
+        enemy.setScale(2);
     }
 }
 
@@ -166,7 +195,7 @@ function destroyEnemy(bullet, enemy) {
 }
 
 function hitPlayer(playerObj, bullet) {
-    bullet.destroy(); // solo pierde vida con balas enemigas
+    bullet.destroy();
     loseLife(this);
 }
 
@@ -188,7 +217,7 @@ function loseLife(scene) {
     let goText = scene.add.text(
         400, 300,
         "GAME OVER\nPresiona ESPACIO para reiniciar",
-        { fontSize: '32px', fill: '#ff0000', align: 'center' }
+        { fontSize: "32px", fill: "#ff0000", align: "center" }
     ).setOrigin(0.5);
 
     player.setVelocity(0, 0);
